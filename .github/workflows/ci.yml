@@ -29,11 +29,15 @@ jobs:
             os: ubuntu-24.04
             generator: Ninja
           - name: macOS (Apple Clang)
-            os: macos-14
+            os: macos-15
             generator: Ninja
           - name: Windows (MSVC)
             os: windows-2022
             generator: Visual Studio 17 2022
+          - name: Windows ARM64 (MSVC)
+            os: windows-11-arm
+            generator: Visual Studio 18 2026
+            platform: ARM64
     steps:
       - uses: actions/checkout@v5
         with:
@@ -48,8 +52,16 @@ jobs:
         run: brew install ninja
 
       - name: Configure
+        if: matrix.platform != 'ARM64'
         run: >
           cmake -S . -B out -G "${{ matrix.generator }}"
+          -DCMAKE_BUILD_TYPE=Release
+          -DPSPRECOMP_CCACHE=OFF
+
+      - name: Configure Windows ARM64
+        if: matrix.platform == 'ARM64'
+        run: >
+          cmake -S . -B out -G "${{ matrix.generator }}" -A ARM64
           -DCMAKE_BUILD_TYPE=Release
           -DPSPRECOMP_CCACHE=OFF
 
