@@ -6,6 +6,12 @@
 
 #include "crypto_keys.hpp"
 
+#include "crypto/pgd_keys_file.hpp"
+#include "install/user_data.hpp"
+#include "profile.hpp"
+
+#include <iostream>
+
 namespace portablekit {
 
 const CryptoKeys *crypto_keys() {
@@ -28,6 +34,18 @@ const CryptoKeys *crypto_keys() {
         keys.savedata[5] = {0xCB, 0x15, 0xF4, 0x07, 0xF9, 0x6A, 0x52, 0x3C, 0x04, 0xB9, 0xB2, 0xEE, 0x5C, 0x53, 0xFA, 0x86};
         keys.savedata[6] = {0x70, 0x44, 0xA3, 0xAE, 0xEF, 0x5D, 0xA5, 0xF2, 0x85, 0x7F, 0xF2, 0xD6, 0x94, 0xF5, 0x36, 0x3B};
         keys.savedata[7] = {0xEC, 0x6D, 0x29, 0x59, 0x26, 0x35, 0xA5, 0x7F, 0x97, 0x2A, 0x0D, 0xBC, 0xA3, 0x26, 0x33, 0x00};
+
+        const std::filesystem::path key_path = [] {
+            if (const char *name = portablekit::env("KEYS"); name != nullptr && *name != '\0')
+                return install::path_from_utf8(name);
+            return install::user_data_directory() / "keys.txt";
+        }();
+        const PgdKeysFileReport report = load_pgd_keys_file(key_path, keys);
+        if (report.found) {
+            for (const std::string &problem : report.problems) std::cerr << "[keys] " << problem << "\n";
+            std::cerr << "[keys] PGD: " << report.required_present << "/6 required keys available ("
+                      << install::path_to_utf8(key_path) << ")\n";
+        }
         return keys;
     }();
     return &keys;

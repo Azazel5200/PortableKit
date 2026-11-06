@@ -234,12 +234,16 @@ if(PSPRECOMP_BUILD_TESTS)
         "${PORTABLEKIT_ROOT}/host/save_data/param_sfo.cpp"
         "${PORTABLEKIT_ROOT}/host/save_data/savedata_crypto.cpp"
         "${PORTABLEKIT_ROOT}/host/crypto_keys_builtin.cpp"
+        "${PORTABLEKIT_ROOT}/host/crypto/pgd_keys_file.cpp"
+        "${PORTABLEKIT_ROOT}/host/extension_keys.cpp"
+        "${PORTABLEKIT_ROOT}/host/install/user_data.cpp"
         "${PORTABLEKIT_ROOT}/host/save_data/savedata_store.cpp"
         "${PORTABLEKIT_ROOT}/host/save_data/save_transfer.cpp"
         "${PORTABLEKIT_ROOT}/third_party/tiny_aes/aes.c")
     set_source_files_properties("${PORTABLEKIT_ROOT}/third_party/tiny_aes/aes.c" PROPERTIES LANGUAGE CXX)
     target_include_directories(portablekit_savedata_tests PRIVATE
         "${PORTABLEKIT_ROOT}/host" "${PORTABLEKIT_ROOT}/third_party" "${PORTABLEKIT_ROOT}/include")
+    target_link_libraries(portablekit_savedata_tests PRIVATE psprecomp_core)
     set_target_properties(portablekit_savedata_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     add_test(NAME portablekit_savedata_tests COMMAND portablekit_savedata_tests)
 
@@ -522,6 +526,7 @@ if(PSPRECOMP_BUILD_TESTS)
     add_executable(portablekit_keys_file_tests
         "${PORTABLEKIT_ROOT}/tests/keys_file_tests.cpp"
         "${PORTABLEKIT_ROOT}/tests/builtin_keys_renamed.cpp"
+        "${PORTABLEKIT_ROOT}/host/crypto/pgd_keys_file.cpp"
         "${PORTABLEKIT_ROOT}/apps/portablekit/src/keys_file.cpp"
         "${PORTABLEKIT_ROOT}/apps/portablekit/src/app_home.cpp"
         "${PORTABLEKIT_ROOT}/apps/portablekit/src/text_format.cpp"
@@ -536,4 +541,20 @@ if(PSPRECOMP_BUILD_TESTS)
     target_link_libraries(portablekit_keys_file_tests PRIVATE psprecomp_core)
     set_target_properties(portablekit_keys_file_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     add_test(NAME portablekit_keys_file_tests COMMAND portablekit_keys_file_tests)
+endif()
+
+# Only public fingerprints are bundled. This check uses invalid/dummy values
+# to verify the PGD loader rejects them without needing private PSP keys.
+if(PSPRECOMP_BUILD_TESTS)
+    add_executable(portablekit_pgd_keys_file_tests
+        "${PORTABLEKIT_ROOT}/tests/pgd_keys_file_tests.cpp"
+        "${PORTABLEKIT_ROOT}/host/crypto/pgd_keys_file.cpp"
+        "${PORTABLEKIT_ROOT}/host/extension_keys.cpp")
+    target_compile_features(portablekit_pgd_keys_file_tests PRIVATE cxx_std_20)
+    target_include_directories(portablekit_pgd_keys_file_tests PRIVATE
+        "${PORTABLEKIT_ROOT}/host" "${PORTABLEKIT_ROOT}/include")
+    target_link_libraries(portablekit_pgd_keys_file_tests PRIVATE psprecomp_core)
+    set_target_properties(portablekit_pgd_keys_file_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    add_test(NAME portablekit_pgd_keys_file_tests COMMAND portablekit_pgd_keys_file_tests)
 endif()
