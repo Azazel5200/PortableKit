@@ -503,6 +503,38 @@ static std::vector<std::uint8_t> make_branch_delay_test_elf() {
     return bytes;
 }
 
+// A PSP ELF with one synthetic sceGeListEnQueue import.  None of the bytes
+// originate from a commercial game.  The code calls the imported stub from
+// outside its generated AOT unit, exercising the import dispatch boundary.
+static std::vector<std::uint8_t> make_ge_import_test_elf() {
+    auto bytes = make_branch_delay_test_elf();
+    bytes.resize(0x200u, 0u);
+    put32(bytes, 64u, 0x100u); // p_paddr points to module info in the file.
+    put32(bytes, 68u, 0x180u);
+    put32(bytes, 72u, 0x180u);
+
+    constexpr std::uint32_t stub_address = 0x08804110u;
+    put32(bytes, 0x80u, 0x0C000000u | ((stub_address >> 2u) & 0x03FFFFFFu)); // jal sceGeListEnQueue
+    put32(bytes, 0x84u, 0u);          // delay slot
+    put32(bytes, 0x88u, 0x03E00008u); // jr ra
+    put32(bytes, 0x8Cu, 0u);
+
+    put32(bytes, 0x100u + 44u, 0x088040C0u); // module.stub_top
+    put32(bytes, 0x100u + 48u, 0x088040D4u); // module.stub_end
+    put32(bytes, 0x140u, 0x088040E0u);       // library name pointer
+    bytes[0x148u] = 5u;                      // import descriptor length in words
+    put16(bytes, 0x14Au, 1u);                // one function
+    put32(bytes, 0x14Cu, 0x08804100u);       // NID table pointer
+    put32(bytes, 0x150u, stub_address);      // import stub table pointer
+    constexpr char library[] = "sceGe_user";
+    for (std::size_t i = 0; i < sizeof(library); ++i) {
+        bytes[0x160u + i] = static_cast<std::uint8_t>(library[i]);
+    }
+    put32(bytes, 0x180u, 0xAB49E76Au); // sceGeListEnQueue NID
+    put32(bytes, 0x190u, 0x03E00008u); // dummy imported stub: jr ra
+    return bytes;
+}
+
 static std::vector<std::uint8_t> make_cross_unit_branch_test_elf() {
     std::vector<std::uint8_t> bytes(0xC8u, 0u);
     bytes[0] = 0x7Fu; bytes[1] = 'E'; bytes[2] = 'L'; bytes[3] = 'F';
@@ -1210,6 +1242,58 @@ static void test_automatic_cfg_and_codegen() {
     }
     require(text.find("ctx.set_gpr(") == std::string::npos,
             "Automatic codegen retained set_gpr helper calls instead of direct constant GPR writes");
+    std::filesystem::remove_all(root);
+#endif
+}
+
+static void test_automatic_ge_import_codegen() {
+#ifndef PSPRECOMP_CODEGEN_PATH
+    throw std::runtime_error("PSPRECOMP_CODEGEN_PATH was not provided by CMake");
+#else
+    constexpr std::uint32_t ge_stub = 0x08804110u;
+    constexpr std::uint32_t ge_nid = 0xAB49E76Au;
+    const auto bytes = make_ge_import_test_elf();
+    auto elf = psprecomp::Elf32Image::from_bytes(bytes, "synthetic_ge_import.elf");
+    psprecomp::GuestMemory memory;
+    (void)elf.load_and_relocate(memory, psprecomp::kDefaultPspUserLoadBase);
+    const auto module = elf.find_module_info(memory, psprecomp::kDefaultPspUserLoadBase);
+    require(module.has_value(), "Synthetic GE import ELF module info was not found");
+    const auto imports = elf.scan_imports(memory, *module);
+    require(imports.size() == 1u && imports[0].library == "sceGe_user" &&
+            imports[0].nid == ge_nid && imports[0].stub_address == ge_stub,
+            "Synthetic GE import table did not decode correctly");
+
+    const auto root = std::filesystem::temp_directory_path() / "psprecomp_ge_import_codegen_test";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root);
+    const auto elf_path = root / "synthetic_ge_import.elf";
+    const auto generated_dir = root / "generated";
+    {
+        std::ofstream out(elf_path, std::ios::binary);
+        out.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    }
+    const std::string command = shell_quote(codegen_tool_path()) + " " + shell_quote(elf_path) +
+        " --auto " + shell_quote(generated_dir) + " 0x08804000 64";
+    require(std::system(shell_command(command).c_str()) == 0,
+            "Synthetic GE import AOT generation failed");
+
+    std::string unit;
+    {
+        std::ifstream source(generated_dir / "generated_unit_0000.cpp");
+        unit.assign(std::istreambuf_iterator<char>(source), std::istreambuf_iterator<char>());
+    }
+    require(unit.find("ctx.pc = 0x08804110u;") != std::string::npos,
+            "AOT GE import call was not routed to its PSP stub address");
+
+    std::string registry;
+    {
+        std::ifstream source(generated_dir / "generated_registry.cpp");
+        registry.assign(std::istreambuf_iterator<char>(source), std::istreambuf_iterator<char>());
+    }
+    require(registry.find("invoke_import_cached(0u, \"sceGe_user\", 0xAB49E76Au, ctx)") != std::string::npos,
+            "AOT GE import wrapper lost its sceGeListEnQueue HLE target");
+    require(registry.find("ctx.pc == import_pc) ctx.pc = return_address") != std::string::npos,
+            "AOT GE import wrapper lost the return-to-RA context guard");
     std::filesystem::remove_all(root);
 #endif
 }
@@ -2185,6 +2269,7 @@ int main() {
         test_codegen_extra_instructions();
         test_vfpu_branch_cfg_discovery();
         test_automatic_cfg_and_codegen();
+        test_automatic_ge_import_codegen();
         test_automatic_cross_unit_tail_chaining();
         test_materialized_function_pointer_discovery();
 
