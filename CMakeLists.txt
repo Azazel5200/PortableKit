@@ -219,6 +219,15 @@ if(PSPRECOMP_BUILD_TESTS)
     target_compile_definitions(psprecomp_tests PRIVATE
         PSPRECOMP_CODEGEN_PATH="$<TARGET_FILE:psp_recomp>")
     add_test(NAME psprecomp_tests COMMAND psprecomp_tests)
+
+    # The GE log comparator is a Python stdlib-only diagnostic. Run its
+    # synthetic, game-free parser tests wherever Python is available.
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME portablekit_ge_trace_compare_tests
+            COMMAND "${Python3_EXECUTABLE}" -m unittest discover
+                -s "${PORTABLEKIT_ROOT}/tests" -p test_compare_ge_traces.py)
+    endif()
 endif()
 
 # Save-data checks that need no game data: crypto test vectors and round trips,

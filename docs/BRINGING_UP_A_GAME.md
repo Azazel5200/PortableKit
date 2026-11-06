@@ -145,6 +145,11 @@ These gates prevent three different kinds of success from being confused:
    PSP vblank 4800 (approximately 80 seconds at 60 Hz), rather than using up
    the trace budget during startup. Keep the same scripted input and target
    vblank in both runs; exact scene timing may still differ between builds.
+   When both logs have been captured, run
+   `python tools/compare_ge_traces.py interpreter.log aot.log` from the
+   PortableKit checkout. It summarizes GE calls and compares guest return
+   addresses without reading the executable or uploading any assets. A
+   missing call is a diagnostic lead, not proof of the cause.
    An absent enqueue in AOT points upstream of Vulkan. Repeat the AOT run
    with `PSPRECOMP_NO_CHAIN=1` to determine whether native cross-unit call
    chaining affects the result; that comparison is diagnostic, not a
