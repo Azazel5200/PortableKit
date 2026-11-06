@@ -133,15 +133,34 @@ elseif(_portablekit_ffmpeg_mode STREQUAL "system")
     if(PKG_CONFIG_FOUND)
         pkg_check_modules(PORTABLEKIT_LIBAV QUIET IMPORTED_TARGET libavcodec libavutil)
     endif()
-    if(NOT PORTABLEKIT_LIBAV_FOUND)
+    add_library(portablekit_ffmpeg INTERFACE)
+    if(PORTABLEKIT_LIBAV_FOUND)
+        target_link_libraries(portablekit_ffmpeg INTERFACE PkgConfig::PORTABLEKIT_LIBAV)
+        message(STATUS "portablekit: system FFmpeg libavcodec ${PORTABLEKIT_LIBAV_libavcodec_VERSION} (pkg-config)")
+    elseif(WIN32)
+        # vcpkg's Windows triplets provide FindFFMPEG.cmake rather than relying
+        # on a host pkg-config executable. Preserve the pkg-config path on
+        # other platforms, where it has already been exercised.
+        find_package(FFMPEG QUIET)
+        if(NOT FFMPEG_FOUND OR NOT FFMPEG_INCLUDE_DIRS OR NOT FFMPEG_LIBRARIES)
+            message(FATAL_ERROR
+                "PORTABLEKIT_FFMPEG=system: neither pkg-config nor the Windows FFmpeg CMake "
+                "package found libavcodec and libavutil. Install the development libraries "
+                "for the target architecture (for example via vcpkg).")
+        endif()
+        target_include_directories(portablekit_ffmpeg INTERFACE ${FFMPEG_INCLUDE_DIRS})
+        if(FFMPEG_LIBRARY_DIRS)
+            target_link_directories(portablekit_ffmpeg INTERFACE ${FFMPEG_LIBRARY_DIRS})
+        endif()
+        target_link_libraries(portablekit_ffmpeg INTERFACE ${FFMPEG_LIBRARIES})
+        message(STATUS "portablekit: system FFmpeg from Windows CMake package")
+    else()
         message(FATAL_ERROR
             "PORTABLEKIT_FFMPEG=system, but pkg-config finds no libavcodec and libavutil. Install "
             "FFmpeg's development files, or configure with -DPORTABLEKIT_FFMPEG=bundled (the default).")
     endif()
-    add_library(portablekit_ffmpeg INTERFACE)
-    target_link_libraries(portablekit_ffmpeg INTERFACE PkgConfig::PORTABLEKIT_LIBAV)
     set(PORTABLEKIT_HAS_FFMPEG ON)
-    message(STATUS "portablekit: FFmpeg libavcodec ${PORTABLEKIT_LIBAV_libavcodec_VERSION} from the system; music and movies enabled")
+    message(STATUS "portablekit: system FFmpeg; music and movies enabled")
 
 elseif(WIN32)
     if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR CMAKE_SYSTEM_PROCESSOR MATCHES "ARM|arm|aarch")
