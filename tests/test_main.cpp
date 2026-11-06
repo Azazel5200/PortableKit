@@ -455,6 +455,53 @@ static void test_import_return_context_guard() {
     psprecomp::set_runtime_thread_identity(-1, "none");
 }
 
+static void synthetic_ge_import_wrapper(psprecomp::CorpusRuntime &rt,
+                                        psprecomp::AllegrexContext &ctx) {
+    // Same contract as an AOT-generated PSP import wrapper: HLE may resume
+    // another guest thread, even at the identical PSP import-stub PC.
+    const auto caller = rt.capture_execution_context();
+    const std::uint32_t import_pc = ctx.pc;
+    const std::uint32_t return_address = ctx.gpr[31];
+    rt.invoke_import_cached(0u, "sceGe_user", 0xAB49E76Au, ctx);
+    if (!rt.stopped() && rt.execution_context_matches(caller) && ctx.pc == import_pc)
+        ctx.pc = return_address;
+}
+
+static void test_ge_hle_wrapper_execution() {
+    constexpr std::uint32_t stub = 0x08804110u;
+    constexpr std::uint32_t returned_to = 0x08804008u;
+    psprecomp::Runtime runtime;
+    std::uint32_t submissions = 0u;
+    bool switch_thread = false;
+    runtime.register_hle("sceGe_user", 0xAB49E76Au,
+                         [&](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+                             ctx.gpr[2] = ++submissions;
+                             if (switch_thread) psprecomp::set_runtime_thread_identity(7, "GE-callback-thread");
+                         });
+    runtime.register_function(stub, &synthetic_ge_import_wrapper, "sceGe_user::sceGeListEnQueue");
+    psprecomp::AllegrexContext ctx{};
+    ctx.gpr[31] = returned_to;
+    psprecomp::set_runtime_thread_identity(3, "threadmain");
+    require(runtime.invoke_isolated_aot(stub, ctx), "Synthetic GE AOT import was not dispatched");
+    require(ctx.pc == returned_to && ctx.gpr[2] == 1u && submissions == 1u,
+            "Synchronous GE HLE import did not return to the guest caller");
+
+    // The second call reuses invoke_import_cached's already resolved HLE slot.
+    require(runtime.invoke_isolated_aot(stub, ctx), "Cached GE AOT import was not dispatched");
+    require(ctx.pc == returned_to && ctx.gpr[2] == 2u && submissions == 2u,
+            "Cached GE HLE import did not submit exactly once and return");
+
+    // An HLE call can switch PSP threads without changing the current stub PC.
+    // The wrapper must leave that new context alone, not overwrite it with the
+    // old thread's $ra and return into a stale native frame.
+    switch_thread = true;
+    require(runtime.invoke_isolated_aot(stub, ctx), "Thread-switching GE import was not dispatched");
+    require(ctx.pc == stub && ctx.gpr[2] == 3u && submissions == 3u &&
+            psprecomp::runtime_thread_uid() == 7,
+            "AOT GE import wrapper overwrote a switched thread's continuation");
+    psprecomp::set_runtime_thread_identity(-1, "none");
+}
+
 static void put16(std::vector<std::uint8_t> &bytes, std::size_t offset, std::uint16_t value) {
     bytes[offset] = static_cast<std::uint8_t>(value);
     bytes[offset + 1] = static_cast<std::uint8_t>(value >> 8u);
@@ -1418,6 +1465,7 @@ static std::vector<std::uint8_t> make_relocation_test_prx() {
 int main() {
     try {
         test_import_return_context_guard();
+        test_ge_hle_wrapper_execution();
         test_chained_call_context_guard();
         test_nested_direct_chain_context_guard();
         test_interpreter_delay_slots_and_branch_likely();
