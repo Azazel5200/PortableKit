@@ -2,6 +2,7 @@
 #include "system.hpp"
 
 #include "app_paths.hpp"
+#include "audio/atrac_decoder.hpp"
 #include "corpus_library.hpp"
 
 #include "adhoc/client.hpp"
@@ -14,6 +15,7 @@
 #include "install/user_data.hpp"
 #include "gpu/ge_state.hpp"
 #include "kernel/kernel.hpp"
+#include "movie/avc_decoder.hpp"
 
 #include "psprecomp/common.hpp"
 #include "psprecomp/elf32.hpp"
@@ -99,13 +101,33 @@ std::string usage() {
     return "usage: " + app + " [game_dir]\n"
            "       " + app + " --install [image.iso [--in-place]]\n"
            "       " + app + " --adhoc-server [port]\n"
+           "       " + app + " --check-media\n"
            "  game_dir        play from a directory holding EBOOT.ELF, disc.iso and ms0/\n"
            "  --install       run the setup again on screen, then play\n"
            "  --install image set up from image.iso without the setup screens, then exit\n"
            "  --in-place      use the image where it is instead of copying it\n"
            "  --adhoc-server  run only the ad hoc server that Network > Host a session\n"
            "                  starts, on TCP port (default 27312) and the next one up,\n"
-           "                  announced on the local network, until Ctrl+C\n";
+           "                  announced on the local network, until Ctrl+C\n"
+           "  --check-media   inspect linked ATRAC3, ATRAC3plus and H.264 decoders\n"
+           "                  without loading any game files\n";
+}
+
+int check_media_decoders() {
+    const bool atrac3 = portablekit::audio::AtracDecoder::supports(portablekit::audio::AtracCodec::Atrac3);
+    const bool atrac3plus = portablekit::audio::AtracDecoder::supports(portablekit::audio::AtracCodec::Atrac3Plus);
+    const bool h264 = portablekit::movie::AvcDecoder::available();
+    const auto status = [](bool present) { return present ? "available" : "MISSING"; };
+    std::cout << "Linked media decoders (no game files loaded):\n"
+              << "  ATRAC3:     " << status(atrac3) << '\n'
+              << "  ATRAC3plus: " << status(atrac3plus) << '\n'
+              << "  H.264:      " << status(h264) << '\n';
+    if (!atrac3 || !atrac3plus || !h264) {
+        std::cerr << "A required media decoder is missing. Check the FFmpeg build configuration.\n";
+        return 3;
+    }
+    std::cout << "Decoder availability verified; actual music and video playback still require a game test.\n";
+    return 0;
 }
 
 struct Options {
@@ -329,6 +351,7 @@ int main(int argc, char **argv) {
     ensure_main_stack(argv);
 #endif
     try {
+        if (argc == 2 && std::string(argv[1]) == "--check-media") return check_media_decoders();
         if (argc > 1 && std::string(argv[1]) == "--adhoc-server") return run_adhoc_server(argc, argv);
         Options options;
         try {

@@ -61,6 +61,24 @@ endif()
 option(PSPRECOMP_LTO "Enable link-time/whole-program optimization" OFF)
 option(PSPRECOMP_NATIVE_AVX2 "Use AVX2 code generation for optimized MSVC builds" OFF)
 option(PSPRECOMP_HOST_AVX "Use AVX for host-side scalar floor/ceil hot paths on MSVC" ON)
+
+# MSVC also targets ARM64. /arch:AVX and /arch:AVX2 are x86/x64-only
+# switches, so do not pass them to an ARM64 compiler. A Visual Studio
+# generator reports the target in CMAKE_VS_PLATFORM_NAME; Ninja uses the
+# target processor instead.
+set(_psprecomp_msvc_x86 FALSE)
+if(MSVC)
+    if(CMAKE_VS_PLATFORM_NAME)
+        if(CMAKE_VS_PLATFORM_NAME MATCHES "^(Win32|x64)$")
+            set(_psprecomp_msvc_x86 TRUE)
+        endif()
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|x86|x64|i[3-6]86)$")
+        set(_psprecomp_msvc_x86 TRUE)
+    endif()
+endif()
+if(MSVC AND PSPRECOMP_NATIVE_AVX2 AND NOT _psprecomp_msvc_x86)
+    message(FATAL_ERROR "PSPRECOMP_NATIVE_AVX2 requires an x86 or x64 MSVC target")
+endif()
 option(PSPRECOMP_AOT_ASSUME_NO_WRITE_WATCH
     "Remove per-store write-watch branch from production AOT fast memory" OFF)
 option(PSPRECOMP_AOT_PRODUCTION_FASTPATHS
@@ -97,7 +115,7 @@ endif()
 if(PSPRECOMP_AOT_PRODUCTION_FASTPATHS)
     add_compile_definitions(PSPRECOMP_AOT_PRODUCTION_FASTPATHS=1)
 endif()
-if(MSVC AND PSPRECOMP_NATIVE_AVX2)
+if(MSVC AND PSPRECOMP_NATIVE_AVX2 AND _psprecomp_msvc_x86)
     add_compile_options($<$<CONFIG:Release>:/arch:AVX2>
                         $<$<CONFIG:RelWithDebInfo>:/arch:AVX2>)
 endif()
@@ -188,7 +206,7 @@ function(psprecomp_enable_host_avx target)
     # command line and therefore silently downgrades the whole target. AVX2
     # already includes the AVX scalar instructions this compatibility switch
     # was introduced for, so do not emit the weaker override in an AVX2 build.
-    if(PSPRECOMP_HOST_AVX AND MSVC AND NOT PSPRECOMP_NATIVE_AVX2)
+    if(PSPRECOMP_HOST_AVX AND MSVC AND _psprecomp_msvc_x86 AND NOT PSPRECOMP_NATIVE_AVX2)
         target_compile_options(${target} PRIVATE /arch:AVX)
     endif()
 endfunction()
@@ -201,6 +219,15 @@ if(PSPRECOMP_BUILD_TESTS)
     target_compile_definitions(psprecomp_tests PRIVATE
         PSPRECOMP_CODEGEN_PATH="$<TARGET_FILE:psp_recomp>")
     add_test(NAME psprecomp_tests COMMAND psprecomp_tests)
+
+    # The GE log comparator is a Python stdlib-only diagnostic. Run its
+    # synthetic, game-free parser tests wherever Python is available.
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME portablekit_ge_trace_compare_tests
+            COMMAND "${Python3_EXECUTABLE}" -m unittest discover
+                -s "${PORTABLEKIT_ROOT}/tests" -p test_compare_ge_traces.py)
+    endif()
 endif()
 
 # Save-data checks that need no game data: crypto test vectors and round trips,
@@ -216,12 +243,16 @@ if(PSPRECOMP_BUILD_TESTS)
         "${PORTABLEKIT_ROOT}/host/save_data/param_sfo.cpp"
         "${PORTABLEKIT_ROOT}/host/save_data/savedata_crypto.cpp"
         "${PORTABLEKIT_ROOT}/host/crypto_keys_builtin.cpp"
+        "${PORTABLEKIT_ROOT}/host/crypto/pgd_keys_file.cpp"
+        "${PORTABLEKIT_ROOT}/host/extension_keys.cpp"
+        "${PORTABLEKIT_ROOT}/host/install/user_data.cpp"
         "${PORTABLEKIT_ROOT}/host/save_data/savedata_store.cpp"
         "${PORTABLEKIT_ROOT}/host/save_data/save_transfer.cpp"
         "${PORTABLEKIT_ROOT}/third_party/tiny_aes/aes.c")
     set_source_files_properties("${PORTABLEKIT_ROOT}/third_party/tiny_aes/aes.c" PROPERTIES LANGUAGE CXX)
     target_include_directories(portablekit_savedata_tests PRIVATE
         "${PORTABLEKIT_ROOT}/host" "${PORTABLEKIT_ROOT}/third_party" "${PORTABLEKIT_ROOT}/include")
+    target_link_libraries(portablekit_savedata_tests PRIVATE psprecomp_core)
     set_target_properties(portablekit_savedata_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     add_test(NAME portablekit_savedata_tests COMMAND portablekit_savedata_tests)
 
@@ -504,6 +535,7 @@ if(PSPRECOMP_BUILD_TESTS)
     add_executable(portablekit_keys_file_tests
         "${PORTABLEKIT_ROOT}/tests/keys_file_tests.cpp"
         "${PORTABLEKIT_ROOT}/tests/builtin_keys_renamed.cpp"
+        "${PORTABLEKIT_ROOT}/host/crypto/pgd_keys_file.cpp"
         "${PORTABLEKIT_ROOT}/apps/portablekit/src/keys_file.cpp"
         "${PORTABLEKIT_ROOT}/apps/portablekit/src/app_home.cpp"
         "${PORTABLEKIT_ROOT}/apps/portablekit/src/text_format.cpp"
@@ -518,4 +550,20 @@ if(PSPRECOMP_BUILD_TESTS)
     target_link_libraries(portablekit_keys_file_tests PRIVATE psprecomp_core)
     set_target_properties(portablekit_keys_file_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     add_test(NAME portablekit_keys_file_tests COMMAND portablekit_keys_file_tests)
+endif()
+
+# Only public fingerprints are bundled. This check uses invalid/dummy values
+# to verify the PGD loader rejects them without needing private PSP keys.
+if(PSPRECOMP_BUILD_TESTS)
+    add_executable(portablekit_pgd_keys_file_tests
+        "${PORTABLEKIT_ROOT}/tests/pgd_keys_file_tests.cpp"
+        "${PORTABLEKIT_ROOT}/host/crypto/pgd_keys_file.cpp"
+        "${PORTABLEKIT_ROOT}/host/extension_keys.cpp")
+    target_compile_features(portablekit_pgd_keys_file_tests PRIVATE cxx_std_20)
+    target_include_directories(portablekit_pgd_keys_file_tests PRIVATE
+        "${PORTABLEKIT_ROOT}/host" "${PORTABLEKIT_ROOT}/include")
+    target_link_libraries(portablekit_pgd_keys_file_tests PRIVATE psprecomp_core)
+    set_target_properties(portablekit_pgd_keys_file_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    add_test(NAME portablekit_pgd_keys_file_tests COMMAND portablekit_pgd_keys_file_tests)
 endif()

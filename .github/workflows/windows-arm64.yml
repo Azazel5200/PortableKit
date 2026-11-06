@@ -1,0 +1,38 @@
+# Verify the PSP recompiler, host system layer and game-free tests natively on
+# Windows ARM64. Games and generated AOT code are never needed by this job.
+name: Windows ARM64 framework
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portablekit-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  framework:
+    name: Windows ARM64 (MSVC)
+    runs-on: windows-11-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: >
+          cmake -S . -B out -G "Visual Studio 18 2026" -A ARM64
+          -DPSPRECOMP_BUILD_TESTS=ON
+          -DPSPRECOMP_CCACHE=OFF
+
+      - name: Build framework and tests
+        run: cmake --build out --config Release --parallel 2
+
+      - name: Run tests
+        run: ctest --test-dir out --build-config Release --output-on-failure --timeout 120

@@ -318,5 +318,9 @@ using PatchImageHook = void (*)(psprecomp::Runtime &, const psprecomp::Elf32Imag
 // The full name of that variable, for messages and for the menu's list of
 // settings the environment has overridden.
 [[nodiscard]] std::string env_name(const char *name);
+// The PSP language the game sees. <prefix>_SYSTEM_LANGUAGE may override the
+// profile default with a PSP language number (0..11) or a locale code such
+// as "es"; an invalid value leaves the profile default unchanged.
+[[nodiscard]] std::uint32_t configured_system_language();
 
 } // namespace portablekit

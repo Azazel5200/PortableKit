@@ -26,8 +26,11 @@ public:
     AtracDecoder(const AtracDecoder &) = delete;
     AtracDecoder &operator=(const AtracDecoder &) = delete;
 
-    // True when the build links a decoder.
+    // True when at least one ATRAC variant is available in the linked
+    // FFmpeg build; individual tracks still check the exact codec on open().
     [[nodiscard]] static bool available() noexcept;
+    // A build may include libavcodec without enabling every decoder.
+    [[nodiscard]] static bool supports(AtracCodec codec) noexcept;
 
     // For ATRAC3, `extradata` is the 14 codec-specific bytes that follow
     // cbSize in the WAVE `fmt ` chunk (coding mode and frame factor);

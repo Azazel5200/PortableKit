@@ -131,6 +131,17 @@ and reads it at run time with `ext::key_bytes("vendor.table")` (`ext::key` for 1
 - **Desktop app.** The player's keys file accepts a declared name like one of PortableKit's own: it checks the length and, when one is declared, the fingerprint, and a wrong value is a problem that refuses the file on import. A declared `kirk.aes.<slot>` is also a KIRK key for PortableKit. A name nothing declares is a warning and is left out, but no longer refuses the file. `portablekit keys status` lists the declared keys by module, present or missing (`--json`: `extension_keys`). A name PortableKit checks itself keeps PortableKit's check.
 - **Ports.** PortableKit's own keys are compiled in. Declared keys come from an optional keys file in the same format: `<PREFIX>_KEYS`, else `keys.txt` in the data folder (`<PREFIX>_DATA_DIR`, else the port's own); names nothing declares are left alone there. Startup says `HLE extension keys: N of M declared keys present (<path>)`, with a line for each wrong one.
 
+**PGD files in ports.** The same optional file also supplies keys for PortableKit's
+PGD reader. This requires no extension module: `kirk.aes.38`, `kirk.aes.39`,
+`kirk.aes.63`, `amctrl.1CD4`, `amctrl.1CE4`, and `amctrl.1CF4` are the six
+required names; `amctrl.dnas.1A90` and `amctrl.dnas.1AA0` are also recognized.
+Each value must be 16 bytes written as hexadecimal. The loader checks each
+against a known SHA-256 fingerprint, rejects incorrect values, and never
+overrides built-in keys. When the file exists, the log reports
+`[keys] PGD: N/6 required keys available`. Neither the framework nor a port
+distributes the private key values. An absent file is allowed; opening a PGD
+that requires unavailable keys still fails explicitly.
+
 An entry function may be called more than once (the keys are collected before the game starts); it only adds to its registry.
 
 ## Filtered files

@@ -79,6 +79,7 @@ Every one of these takes the profile's own prefix, so `TENKAWA_TRACE_KERNEL` for
 | `<PREFIX>_NO_HLE_EXTENSIONS` | Ignore the [HLE extension modules](HLE_EXTENSIONS.md) the build links, for comparing with the framework's own HLE |
 | `<PREFIX>_STRICT_HLE` | Do not bind logging stubs for unimplemented imports, so the game stops at the first one instead of carrying on with a wrong answer |
 | `<PREFIX>_TRACE_KERNEL`, `_TRACE_IO`, `_TRACE_GE`, `_TRACE_SAVEDATA`, … | One subsystem each |
+| `<PREFIX>_TRACE_PGD` | Bounded PGD `sceIoIoctl(0x04100001)` results (including asynchronous calls): the first eight calls and then powers of two, with guest PC and return address; no key bytes logged. Useful when the game opens the same protected file every frame. |
 | `<PREFIX>_TRACE_SYNC` | Every kernel object a thread waits on, which is how a deadlock is read |
 | `<PREFIX>_TRACE_GE_LIST=N[:M]` | Every command word of display-list runs N to N+M-1: what a screen that draws nothing is built from |
 | `<PREFIX>_TRACE_SAS` | SAS voices set, keyed on and off, and each change of the end flags a game polls |
@@ -110,6 +111,79 @@ corpus when you need to watch an address in the executable itself.
 ## A warning about a run with a window
 
 A run with the renderer up does not always die on `SIGTERM`, so `timeout 90` can leave the game running. Use `timeout -s KILL`. Never leave a game running.
+
+## Windows ARM64: release gates for a reusable port
+
+The core and HLE are shared by every port. Keep the first Windows ARM64 target
+game-free: compile the host, Vulkan renderer, shader compiler and AOT tools,
+then run `--help` and game-free tests in CI. Confirm that **every shipped EXE
+and DLL is ARM64** (`IMAGE_FILE_MACHINE_ARM64`, `0xAA64`), including FFmpeg and
+SDL; a working x64 binary under Windows emulation is not a native ARM64 port.
+
+These gates prevent three different kinds of success from being confused:
+
+1. **Host:** a native executable starts and the renderer is linked. This
+   proves the toolchain and dependencies, **not** game compatibility.
+2. **Interpreter:** the owner's locally prepared executable reaches menus and
+   gameplay with input, I/O and draw lists. Missing music or a protected data
+   file can be unrelated to the CPU translator. Use `TRACE_PGD` for protected
+   data failures and `TRACE_ATRAC` for streamed audio; never include keys or
+   game files in CI, reports or repository artifacts.
+3. **AOT:** the owner's generated C++ corpus is compiled for ARM64 and the
+   same scene is compared against the interpreter. Verify **display lists,
+   actual draws and correct images**, not only the frame counter. One list
+   for an entire run instead of one per frame is a guest-code or HLE-path
+   problem even if the native window presents 30 frames per second. Turn off
+   interpreter fallback with `PSPRECOMP_NO_INTERPRETER=1` to reveal missed
+   executable code paths.
+   For a black scene with an active frame loop, set
+   `<PREFIX>_TRACE_GE_SUBMIT=64` and `PSPRECOMP_HLE_HISTOGRAM=1` in separate
+   interpreter and AOT runs. The bounded `[ge-submit]` lines report enqueue
+   calls and guest return addresses without dumping the game's graphics.
+   For scenes reached after the title screen, set
+   `<PREFIX>_TRACE_GE_SUBMIT_FROM=4800` to record the first 64 calls **after**
+   PSP vblank 4800 (approximately 80 seconds at 60 Hz), rather than using up
+   the trace budget during startup. Keep the same scripted input and target
+   vblank in both runs; exact scene timing may still differ between builds.
+   When both logs have been captured, run
+   `python tools/compare_ge_traces.py interpreter.log aot.log` from the
+   PortableKit checkout. It summarizes GE calls and compares guest return
+   addresses without reading the executable or uploading any assets. A
+   missing call is a diagnostic lead, not proof of the cause.
+   An absent enqueue in AOT points upstream of Vulkan. Repeat the AOT run
+   with `PSPRECOMP_NO_CHAIN=1` to determine whether native cross-unit call
+   chaining affects the result; that comparison is diagnostic, not a
+   performance benchmark.
+4. **Complete gameplay:** measure stable frame times and guest CPU cost,
+   listen for streamed music separately from sound effects, select the PSP
+   locale via `<PREFIX>_SYSTEM_LANGUAGE` (for example `es` or `3`), and check
+   controls, saves and multiple scenes before calling the port playable.
+
+On Windows, `PORTABLEKIT_FFMPEG=system` can use target-architecture FFmpeg
+libraries supplied by a CMake toolchain such as vcpkg. The minimum codec
+components are `avcodec` and `avutil`; a no-FFmpeg build may still play sound
+effects but cannot prove ATRAC/AVC media playback. Run `--check-media` on the
+native host to check that the *linked build* actually exposes ATRAC3,
+ATRAC3plus and H.264 decoders. This does not prove that the game's streams
+decode correctly; only a game-specific listening and movie test does. Keep the original
+graphics-only build available until the media-enabled variant is tested on
+hardware. Do not upload a generated game's AOT corpus to make CI green.
+
+An optional compact Opus cache is a future host-side feature, not a drop-in
+replacement for ATRAC packets in the guest's PSP API. Changing the packet
+format would break its expected frame sizes, sample counts, seek points and
+loop behavior. If a port needs an Opus cache, generate it **locally from the
+owner's game data**, key it to the original stream identity, preserve the
+guest-visible ATRAC timing and loop semantics, and fall back to decoding the
+original stream. Keep the disc image untouched and never distribute cached
+game music or video in a public build.
+
+When bringing another classic PSP title to PC, use the same order and add
+only game identity, hashes, paths, save directories and justified quirks to
+its **own** profile. A new HLE call, architecture fix, system setting or
+renderer correction that applies to more than one PSP game belongs here in
+PortableKit. Benchmark x64 or other backends only after the initial ARM64
+target is correct; results do not transfer between host architectures.
 
 ## What this does not tell you
 

@@ -29,7 +29,7 @@ jobs:
             os: ubuntu-24.04
             generator: Ninja
           - name: macOS (Apple Clang)
-            os: macos-14
+            os: macos-15
             generator: Ninja
           - name: Windows (MSVC)
             os: windows-2022

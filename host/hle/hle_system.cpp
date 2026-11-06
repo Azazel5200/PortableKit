@@ -258,7 +258,7 @@ void register_platform(HleRegistrar &hle) {
     });
     // (int *language, int *button): the console's, as GetSystemParamInt says.
     hle.add("sceImpose", "sceImposeGetLanguageMode", [](Runtime &rt, AllegrexContext &ctx) {
-        if (arg(ctx, 0) != 0u) rt.memory().store32(arg(ctx, 0), portablekit::game().system_language);
+        if (arg(ctx, 0) != 0u) rt.memory().store32(arg(ctx, 0), portablekit::configured_system_language());
         if (arg(ctx, 1) != 0u) rt.memory().store32(arg(ctx, 1), portablekit::game().confirm_button);
         kernel().finish(ctx, 0u);
     });
@@ -291,7 +291,7 @@ void register_platform(HleRegistrar &hle) {
         case 2u: value = 1u; break;  // ad hoc channel: automatic
         case 4u: value = 0u; break;  // date format YYYYMMDD
         case 5u: value = 0u; break;  // 24-hour clock
-        case 8u: value = portablekit::game().system_language; break;
+        case 8u: value = portablekit::configured_system_language(); break;
         case 9u: value = portablekit::game().confirm_button; break;
         default: break;
         }
