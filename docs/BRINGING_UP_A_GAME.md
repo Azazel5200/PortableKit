@@ -140,6 +140,11 @@ These gates prevent three different kinds of success from being confused:
    `<PREFIX>_TRACE_GE_SUBMIT=64` and `PSPRECOMP_HLE_HISTOGRAM=1` in separate
    interpreter and AOT runs. The bounded `[ge-submit]` lines report enqueue
    calls and guest return addresses without dumping the game's graphics.
+   For scenes reached after the title screen, set
+   `<PREFIX>_TRACE_GE_SUBMIT_FROM=4800` to record the first 64 calls **after**
+   PSP vblank 4800 (approximately 80 seconds at 60 Hz), rather than using up
+   the trace budget during startup. Keep the same scripted input and target
+   vblank in both runs; exact scene timing may still differ between builds.
    An absent enqueue in AOT points upstream of Vulkan. Repeat the AOT run
    with `PSPRECOMP_NO_CHAIN=1` to determine whether native cross-unit call
    chaining affects the result; that comparison is diagnostic, not a

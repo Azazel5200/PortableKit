@@ -74,8 +74,9 @@ void trace_pacing(const char *call, std::int64_t value = -1) {
 }
 
 // <prefix>_TRACE_GE_SUBMIT=N: the first N GE queue submissions (64 by default,
-// capped at 4096), including the guest PC and return address. Compare the
-// interpreter and AOT runs when one presents frames but submits no GE lists.
+// capped at 4096), including the guest PC and return address. Set
+// <prefix>_TRACE_GE_SUBMIT_FROM=V to start at PSP vblank V instead of startup;
+// a game's title screen can exhaust the default budget before gameplay.
 // This is a bounded HLE trace, not a dump of game display-list contents.
 void trace_ge_submit(const char *call, const AllegrexContext &ctx) {
     static const long limit = [] {
@@ -85,8 +86,15 @@ void trace_ge_submit(const char *call, const AllegrexContext &ctx) {
         const long parsed = std::strtol(value, &end, 10);
         return std::clamp(end != value && *end == '\0' && parsed > 0L ? parsed : 64L, 1L, 4096L);
     }();
+    static const std::uint64_t from_vblank = [] {
+        const char *value = portablekit::env("TRACE_GE_SUBMIT_FROM");
+        if (value == nullptr || *value == '-' || *value == '+') return std::uint64_t{0};
+        char *end = nullptr;
+        const auto parsed = std::strtoull(value, &end, 10);
+        return end != value && *end == '\0' ? static_cast<std::uint64_t>(parsed) : std::uint64_t{0};
+    }();
     static long lines = 0L;
-    if (lines >= limit) return;
+    if (lines >= limit || kernel().vblank_count() < from_vblank) return;
     ++lines;
     const Thread *thread = kernel().current_thread();
     std::fprintf(stderr,
