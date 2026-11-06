@@ -79,7 +79,7 @@ Every one of these takes the profile's own prefix, so `TENKAWA_TRACE_KERNEL` for
 | `<PREFIX>_NO_HLE_EXTENSIONS` | Ignore the [HLE extension modules](HLE_EXTENSIONS.md) the build links, for comparing with the framework's own HLE |
 | `<PREFIX>_STRICT_HLE` | Do not bind logging stubs for unimplemented imports, so the game stops at the first one instead of carrying on with a wrong answer |
 | `<PREFIX>_TRACE_KERNEL`, `_TRACE_IO`, `_TRACE_GE`, `_TRACE_SAVEDATA`, … | One subsystem each |
-| `<PREFIX>_TRACE_PGD` | Bounded PGD `sceIoIoctl(0x04100001)` results: the first eight calls and then powers of two, with guest PC and return address; no key bytes logged. Useful when the game opens the same protected file every frame. |
+| `<PREFIX>_TRACE_PGD` | Bounded PGD `sceIoIoctl(0x04100001)` results (including asynchronous calls): the first eight calls and then powers of two, with guest PC and return address; no key bytes logged. Useful when the game opens the same protected file every frame. |
 | `<PREFIX>_TRACE_SYNC` | Every kernel object a thread waits on, which is how a deadlock is read |
 | `<PREFIX>_TRACE_GE_LIST=N[:M]` | Every command word of display-list runs N to N+M-1: what a screen that draws nothing is built from |
 | `<PREFIX>_TRACE_SAS` | SAS voices set, keyed on and off, and each change of the end flags a game polls |

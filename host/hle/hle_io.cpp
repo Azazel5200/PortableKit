@@ -626,13 +626,17 @@ std::uint32_t ioctl_op(Runtime &rt, AllegrexContext &ctx) {
 
 void register_async_io(HleRegistrar &hle) {
     hle.add("IoFileMgrForUser", "sceIoIoctlAsync", [](Runtime &rt, AllegrexContext &ctx) {
+        const std::uint32_t fd = arg(ctx, 0);
+        const std::uint32_t command = arg(ctx, 1);
         std::uint32_t error = 0u;
-        OpenFile *file = async_handle(arg(ctx, 0), error);
+        OpenFile *file = async_handle(fd, error);
         if (file == nullptr) {
+            if (command == pgd::kIoctlSetKey) trace_pgd_ioctl(ctx, fd, error);
             kernel().finish(ctx, error);
             return;
         }
         const std::uint32_t result = ioctl_op(rt, ctx);
+        if (command == pgd::kIoctlSetKey) trace_pgd_ioctl(ctx, fd, result);
         complete_async(*file, static_cast<std::int32_t>(result));
         kernel().finish(ctx, 0u);
     });
