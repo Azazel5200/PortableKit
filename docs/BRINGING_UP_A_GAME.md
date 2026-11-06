@@ -112,6 +112,49 @@ corpus when you need to watch an address in the executable itself.
 
 A run with the renderer up does not always die on `SIGTERM`, so `timeout 90` can leave the game running. Use `timeout -s KILL`. Never leave a game running.
 
+## Windows ARM64: release gates for a reusable port
+
+The core and HLE are shared by every port. Keep the first Windows ARM64 target
+game-free: compile the host, Vulkan renderer, shader compiler and AOT tools,
+then run `--help` and game-free tests in CI. Confirm that **every shipped EXE
+and DLL is ARM64** (`IMAGE_FILE_MACHINE_ARM64`, `0xAA64`), including FFmpeg and
+SDL; a working x64 binary under Windows emulation is not a native ARM64 port.
+
+These gates prevent three different kinds of success from being confused:
+
+1. **Host:** a native executable starts and the renderer is linked. This
+   proves the toolchain and dependencies, **not** game compatibility.
+2. **Interpreter:** the owner's locally prepared executable reaches menus and
+   gameplay with input, I/O and draw lists. Missing music or a protected data
+   file can be unrelated to the CPU translator. Use `TRACE_PGD` for protected
+   data failures and `TRACE_ATRAC` for streamed audio; never include keys or
+   game files in CI, reports or repository artifacts.
+3. **AOT:** the owner's generated C++ corpus is compiled for ARM64 and the
+   same scene is compared against the interpreter. Verify **display lists,
+   actual draws and correct images**, not only the frame counter. One list
+   for an entire run instead of one per frame is a guest-code or HLE-path
+   problem even if the native window presents 30 frames per second. Turn off
+   interpreter fallback with `PSPRECOMP_NO_INTERPRETER=1` to reveal missed
+   executable code paths.
+4. **Complete gameplay:** measure stable frame times and guest CPU cost,
+   listen for streamed music separately from sound effects, select the PSP
+   locale via `<PREFIX>_SYSTEM_LANGUAGE` (for example `es` or `3`), and check
+   controls, saves and multiple scenes before calling the port playable.
+
+On Windows, `PORTABLEKIT_FFMPEG=system` can use target-architecture FFmpeg
+libraries supplied by a CMake toolchain such as vcpkg. The minimum codec
+components are `avcodec` and `avutil`; a no-FFmpeg build may still play sound
+effects but cannot prove ATRAC/AVC media playback. Keep the original
+graphics-only build available until the media-enabled variant is tested on
+hardware. Do not upload a generated game's AOT corpus to make CI green.
+
+When bringing another classic PSP title to PC, use the same order and add
+only game identity, hashes, paths, save directories and justified quirks to
+its **own** profile. A new HLE call, architecture fix, system setting or
+renderer correction that applies to more than one PSP game belongs here in
+PortableKit. Benchmark x64 or other backends only after the initial ARM64
+target is correct; results do not transfer between host architectures.
+
 ## What this does not tell you
 
 The interpreter reaches the same HLE and the same renderer as recompiled code, so what it shows about system calls and graphics is real. What it cannot show you is anything about speed, and anything that depends on a game running at its own pace: timing-sensitive code, audio underruns, or a frame rate. Those wait for the corpus.
