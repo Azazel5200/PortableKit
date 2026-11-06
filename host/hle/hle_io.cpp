@@ -13,6 +13,7 @@
 #include "portablekit/hle_extension.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <charconv>
 #include <cstdio>
@@ -220,6 +221,23 @@ std::filesystem::path host_path(const std::string &path) { return io().memory_st
 bool trace_io() {
     static const bool enabled = portablekit::env("TRACE_IO") != nullptr;
     return enabled;
+}
+
+// An opt-in, bounded record of PGD key setup. A game may retry this ioctl
+// every frame; TRACE_IO would bury the important result in thousands of file
+// opens and disc-cache requests. Never log the key bytes themselves.
+void trace_pgd_ioctl(const AllegrexContext &ctx, std::uint32_t fd, std::uint32_t result) {
+    static const bool enabled = portablekit::env("TRACE_PGD") != nullptr;
+    if (!enabled) return;
+    static std::atomic<std::uint64_t> attempts{0};
+    const std::uint64_t attempt = attempts.fetch_add(1u, std::memory_order_relaxed) + 1u;
+    if (attempt > 8u && (attempt & (attempt - 1u)) != 0u) return;
+
+    const auto found = io().files.find(fd);
+    const std::string path = found == io().files.end() ? "<invalid fd>" : found->second.path;
+    std::cerr << "[pgd-trace] ioctl 0x04100001 attempt=" << attempt << " fd=" << fd << " path=" << path
+              << " pc=" << psprecomp::hex32(ctx.pc) << " ra=" << psprecomp::hex32(ctx.gpr[31])
+              << " result=" << psprecomp::hex32(result) << "\n";
 }
 
 std::int64_t open_file(const std::string &full_path, std::uint32_t flags) {
@@ -931,7 +949,11 @@ void register_io(HleRegistrar &hle, const std::filesystem::path &disc_image, con
     // guessed at: every call is reported once with the buffer the game filled
     // in, which is how the command should be worked out.
     hle.add("IoFileMgrForUser", "sceIoIoctl", [](Runtime &rt, AllegrexContext &ctx) {
-        kernel().finish(ctx, ioctl_op(rt, ctx));
+        const std::uint32_t fd = arg(ctx, 0);
+        const std::uint32_t command = arg(ctx, 1);
+        const std::uint32_t result = ioctl_op(rt, ctx);
+        if (command == pgd::kIoctlSetKey) trace_pgd_ioctl(ctx, fd, result);
+        kernel().finish(ctx, result);
     });
 
     hle.add("IoFileMgrForUser", "sceIoDevctl", [](Runtime &rt, AllegrexContext &ctx) {
