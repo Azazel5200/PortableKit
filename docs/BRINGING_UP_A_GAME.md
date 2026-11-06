@@ -136,6 +136,14 @@ These gates prevent three different kinds of success from being confused:
    problem even if the native window presents 30 frames per second. Turn off
    interpreter fallback with `PSPRECOMP_NO_INTERPRETER=1` to reveal missed
    executable code paths.
+   For a black scene with an active frame loop, set
+   `<PREFIX>_TRACE_GE_SUBMIT=64` and `PSPRECOMP_HLE_HISTOGRAM=1` in separate
+   interpreter and AOT runs. The bounded `[ge-submit]` lines report enqueue
+   calls and guest return addresses without dumping the game's graphics.
+   An absent enqueue in AOT points upstream of Vulkan. Repeat the AOT run
+   with `PSPRECOMP_NO_CHAIN=1` to determine whether native cross-unit call
+   chaining affects the result; that comparison is diagnostic, not a
+   performance benchmark.
 4. **Complete gameplay:** measure stable frame times and guest CPU cost,
    listen for streamed music separately from sound effects, select the PSP
    locale via `<PREFIX>_SYSTEM_LANGUAGE` (for example `es` or `3`), and check

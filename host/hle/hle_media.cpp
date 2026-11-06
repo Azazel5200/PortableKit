@@ -73,6 +73,33 @@ void trace_pacing(const char *call, std::int64_t value = -1) {
     if (lines == limit) std::fflush(stdout);
 }
 
+// <prefix>_TRACE_GE_SUBMIT=N: the first N GE queue submissions (64 by default,
+// capped at 4096), including the guest PC and return address. Compare the
+// interpreter and AOT runs when one presents frames but submits no GE lists.
+// This is a bounded HLE trace, not a dump of game display-list contents.
+void trace_ge_submit(const char *call, const AllegrexContext &ctx) {
+    static const long limit = [] {
+        const char *value = portablekit::env("TRACE_GE_SUBMIT");
+        if (value == nullptr) return 0L;
+        char *end = nullptr;
+        const long parsed = std::strtol(value, &end, 10);
+        return std::clamp(end != value && *end == '\0' && parsed > 0L ? parsed : 64L, 1L, 4096L);
+    }();
+    static long lines = 0L;
+    if (lines >= limit) return;
+    ++lines;
+    const Thread *thread = kernel().current_thread();
+    std::fprintf(stderr,
+                 "[ge-submit] %s vblank=%llu thread=%s dispatch=%08X pc=%08X ra=%08X"
+                 " a0=%08X a1=%08X a2=%08X\n",
+                 call, static_cast<unsigned long long>(kernel().vblank_count()),
+                 thread != nullptr ? thread->name.c_str() : "?",
+                 static_cast<unsigned>(psprecomp::runtime_dispatch_pc()),
+                 static_cast<unsigned>(ctx.pc), static_cast<unsigned>(ctx.gpr[31]),
+                 static_cast<unsigned>(ctx.gpr[4]), static_cast<unsigned>(ctx.gpr[5]),
+                 static_cast<unsigned>(ctx.gpr[6]));
+}
+
 constexpr std::uint32_t kEdramBase = 0x04000000u;
 constexpr std::uint32_t kEdramSize = 0x00200000u;
 constexpr std::uint32_t kAudioSampleRate = 44'100u;
@@ -724,6 +751,7 @@ void register_ge(HleRegistrar &hle) {
         kernel().finish(ctx, 0u);
     });
     const auto enqueue = [](Runtime &rt, AllegrexContext &ctx) {
+        trace_ge_submit("enqueue", ctx);
         const std::uint32_t id = media().next_ge_list++;
         GeList list{};
         list.pc = arg(ctx, 0) & 0x0FFFFFFFu;
@@ -737,6 +765,7 @@ void register_ge(HleRegistrar &hle) {
     hle.add("sceGe_user", "sceGeListEnQueue", enqueue);
     hle.add("sceGe_user", "sceGeListEnQueueHead", enqueue);
     hle.add("sceGe_user", "sceGeListUpdateStallAddr", [](Runtime &rt, AllegrexContext &ctx) {
+        trace_ge_submit("update-stall", ctx);
         auto found = media().ge_lists.find(arg(ctx, 0));
         if (found == media().ge_lists.end()) {
             kernel().finish(ctx, error::kIllegalArgument);
