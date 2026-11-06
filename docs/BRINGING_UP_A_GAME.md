@@ -144,9 +144,21 @@ These gates prevent three different kinds of success from being confused:
 On Windows, `PORTABLEKIT_FFMPEG=system` can use target-architecture FFmpeg
 libraries supplied by a CMake toolchain such as vcpkg. The minimum codec
 components are `avcodec` and `avutil`; a no-FFmpeg build may still play sound
-effects but cannot prove ATRAC/AVC media playback. Keep the original
+effects but cannot prove ATRAC/AVC media playback. Run `--check-media` on the
+native host to check that the *linked build* actually exposes ATRAC3,
+ATRAC3plus and H.264 decoders. This does not prove that the game's streams
+decode correctly; only a game-specific listening and movie test does. Keep the original
 graphics-only build available until the media-enabled variant is tested on
 hardware. Do not upload a generated game's AOT corpus to make CI green.
+
+An optional compact Opus cache is a future host-side feature, not a drop-in
+replacement for ATRAC packets in the guest's PSP API. Changing the packet
+format would break its expected frame sizes, sample counts, seek points and
+loop behavior. If a port needs an Opus cache, generate it **locally from the
+owner's game data**, key it to the original stream identity, preserve the
+guest-visible ATRAC timing and loop semantics, and fall back to decoding the
+original stream. Keep the disc image untouched and never distribute cached
+game music or video in a public build.
 
 When bringing another classic PSP title to PC, use the same order and add
 only game identity, hashes, paths, save directories and justified quirks to

@@ -910,7 +910,8 @@ void register_atrac_functions(HleRegistrar &hle) {
 
 void register_atrac(HleRegistrar &hle) {
     if (!audio::AtracDecoder::available()) {
-        std::cout << "Audio: built without FFmpeg; streamed music is silent\n";
+        std::cout << "Audio: no linked ATRAC decoder; streamed music is unavailable"
+                     " (run --check-media to inspect codecs)\n";
         return;
     }
     register_atrac_functions(hle);
